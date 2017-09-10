@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
+	"github.com/go-gl/mathgl/mgl32"
 	"log"
 	"math/rand"
 	"strings"
@@ -15,34 +16,34 @@ import (
 const (
 	title         = "Conway's Game of Life"
 	width, height = 500, 500
-	fps           = 24
+	fps           = 12
 
 	rows, columns = 100, 100
 
 	threshold = 0.15
 
 	vertexShaderSource = `
-    #version 410
-    in vec3 vp;
-    float rx,ry,rz;
-    const float divisor = 350;
-	float rand(vec2 co){
-		return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-	}
-    void main() {
-    	rx = rand(vp.xy) / divisor;
-    	ry = rand(vp.xy) / divisor;
-    	rz = rand(vp.xy) / divisor;
-        gl_Position = vec4(vp.x + rx, vp.y + ry, vp.z + rz, 1.0);
-    }
+#version 410
+
+uniform mat4 projection;
+uniform mat4 camera;
+uniform mat4 model;
+
+in vec3 vert;
+
+void main() {
+    gl_Position = projection * camera * model * vec4(vert, 1);
+}
 ` + "\x00"
 
 	fragmentShaderSource = `
-    #version 410
-    out vec4 frag_colour;
-    void main() {
-        frag_colour = vec4(1, 1, 1, 1);
-    }
+#version 410
+
+out vec4 frag_colour;
+
+void main() {
+	frag_colour = vec4(1, 1, 1, 1);
+}
 ` + "\x00"
 )
 
@@ -72,10 +73,14 @@ type cell struct {
 	x, y int
 }
 
-func (c *cell) draw() {
+func (c *cell) draw(modelUniform int32) {
 	if !c.alive {
 		return
 	}
+
+	trans := mgl32.Translate3D(float32(c.x), float32(c.y), 0)
+	gl.UniformMatrix4fv(modelUniform, 1, false, &trans[0])
+
 	gl.BindVertexArray(c.drawable)
 	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(square)/3))
 
@@ -157,12 +162,22 @@ func main() {
 		exitWith(err, "unable to create OpenGL program")
 	}
 
-	//vao := makeVao(square)
 	cells := makeCells()
 
-	for i := 0; i < 10; i++ {
+	projectionUniform := gl.GetUniformLocation(program, gl.Str("projection\x00"))
+	cameraUniform := gl.GetUniformLocation(program, gl.Str("camera\x00"))
+	modelUniform := gl.GetUniformLocation(program, gl.Str("model\x00"))
 
-	}
+	projection := mgl32.Ortho(0, width, 0, height, 0.1, 5)
+	gl.UniformMatrix4fv(projectionUniform, 1, false, &projection[0])
+
+	camera := mgl32.LookAtV(mgl32.Vec3{0, 0, 3}, mgl32.Vec3{0, 0, 0}, mgl32.Vec3{0, 1, 0})
+	gl.UniformMatrix4fv(cameraUniform, 1, false, &camera[0])
+
+	model := mgl32.Ident4()
+	gl.UniformMatrix4fv(modelUniform, 1, false, &model[0])
+
+	//prevTime := glfw.GetTime()
 
 	for !window.ShouldClose() {
 		t := time.Now()
@@ -173,7 +188,7 @@ func main() {
 			}
 		}
 
-		if err := draw(cells, window, program); err != nil {
+		if err := draw(cells, window, program, projectionUniform, cameraUniform, modelUniform); err != nil {
 			exitWith(err, "window draw failure")
 		}
 
@@ -184,10 +199,12 @@ func main() {
 func makeCells() [][]*cell {
 	rand.Seed(100)
 
+	drawable := makeVao(square)
+
 	cells := make([][]*cell, rows, rows)
 	for x := 0; x < rows; x++ {
 		for y := 0; y < columns; y++ {
-			c := newCell(x, y)
+			c := newCell(x, y, drawable)
 
 			c.alive = rand.Float64() < threshold
 			c.aliveNext = c.alive
@@ -198,33 +215,12 @@ func makeCells() [][]*cell {
 	return cells
 }
 
-func newCell(x, y int) *cell {
+func newCell(x, y int, drawable uint32) *cell {
 	points := make([]float32, len(square), len(square))
 	copy(points, square)
 
-	for i := 0; i < len(points); i++ {
-		var position float32
-		var size float32
-		switch i % 3 {
-		case 0:
-			size = 1.0 / float32(columns)
-			position = float32(x) * size
-		case 1:
-			size = 1.0 / float32(rows)
-			position = float32(y) * size
-		default:
-			continue
-		}
-
-		if points[i] < 0 {
-			points[i] = (position * 2) - 1
-		} else {
-			points[i] = ((position + size) * 2) - 1
-		}
-	}
-
 	return &cell{
-		drawable: makeVao(points),
+		drawable: drawable,
 
 		x: x,
 		y: y,
@@ -267,12 +263,27 @@ func initGl() (uint32, error) {
 		return 0, err
 	}
 
-	prog := gl.CreateProgram()
-	gl.AttachShader(prog, vertexShader)
-	gl.AttachShader(prog, fragmentShader)
-	gl.LinkProgram(prog)
+	program := gl.CreateProgram()
+	gl.AttachShader(program, vertexShader)
+	gl.AttachShader(program, fragmentShader)
+	gl.LinkProgram(program)
 
-	return prog, nil
+	var status int32
+	gl.GetProgramiv(program, gl.LINK_STATUS, &status)
+	if status == gl.FALSE {
+		var logLength int32
+		gl.GetProgramiv(program, gl.INFO_LOG_LENGTH, &logLength)
+
+		log := strings.Repeat("\x00", int(logLength+1))
+		gl.GetProgramInfoLog(program, logLength, nil, gl.Str(log))
+
+		return 0, fmt.Errorf("failed to link program: %v", log)
+	}
+
+	gl.UseProgram(program)
+	gl.ClearColor(0, 0, 0, 1)
+
+	return program, nil
 }
 
 func makeVao(points []float32) uint32 {
@@ -292,13 +303,13 @@ func makeVao(points []float32) uint32 {
 
 }
 
-func draw(cells [][]*cell, window *glfw.Window, program uint32) error {
+func draw(cells [][]*cell, window *glfw.Window, program uint32, projectionUniform int32, cameraUniform int32, modelUniform int32) error {
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	gl.UseProgram(program)
 
 	for x := range cells {
 		for _, c := range cells[x] {
-			c.draw()
+			c.draw(modelUniform)
 		}
 	}
 
