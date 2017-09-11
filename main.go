@@ -4,21 +4,22 @@ import (
 	"runtime"
 
 	"fmt"
+	"github.com/explodes/practice/gllife/graphical"
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
 	"github.com/go-gl/mathgl/mgl32"
 	"log"
+	"math"
 	"math/rand"
 	"strings"
-	"time"
 )
 
 const (
 	title         = "Conway's Game of Life"
-	width, height = 500, 500
-	fps           = 12
+	width, height = 1000, 1000
+	fps           = 60
 
-	rows, columns = 100, 100
+	rows, columns = 500, 500
 
 	threshold = 0.15
 
@@ -29,10 +30,12 @@ uniform mat4 projection;
 uniform mat4 camera;
 uniform mat4 model;
 
+out vec4 vertexColor;
 in vec3 vert;
 
 void main() {
     gl_Position = projection * camera * model * vec4(vert, 1);
+	vertexColor = gl_Position;
 }
 ` + "\x00"
 
@@ -40,27 +43,36 @@ void main() {
 #version 410
 
 out vec4 frag_colour;
+in vec4 vertexColor;
+
+uniform vec3 colorshift;
+
+const float offset = 1f;
 
 void main() {
-	frag_colour = vec4(1, 1, 1, 1);
+	frag_colour = vec4((offset+vertexColor.x)*(0.5f+colorshift.x*0.5f), (offset+vertexColor.y)*(0.5f+colorshift.y*0.5f), (offset+vertexColor.y+vertexColor.x)*(0.5f+colorshift.z*0.5f), 1);
 }
 ` + "\x00"
+
+	low  = 0.0
+	mid  = 0.5
+	high = 1.0
 )
 
 var (
 	triangle = []float32{
-		0, 0.5, 0, // top
-		-0.5, -0.5, 0, // left
-		0.5, -0.5, 0, // right
+		mid, high, mid, // top
+		low, low, mid, // left
+		high, low, mid, // right
 	}
 	square = []float32{
-		-0.5, 0.5, 0,
-		-0.5, -0.5, 0,
-		0.5, -0.5, 0,
+		low, high, mid,
+		low, low, mid,
+		high, low, mid,
 
-		-0.5, 0.5, 0,
-		0.5, 0.5, 0,
-		0.5, -0.5, 0,
+		low, high, mid,
+		high, high, mid,
+		high, low, mid,
 	}
 )
 
@@ -78,8 +90,12 @@ func (c *cell) draw(modelUniform int32) {
 		return
 	}
 
-	trans := mgl32.Translate3D(float32(c.x), float32(c.y), 0)
-	gl.UniformMatrix4fv(modelUniform, 1, false, &trans[0])
+	trans := mgl32.Translate3D(float32(c.x), float32(c.y), 0.5)
+	scale := mgl32.Scale3D(float32(width)/float32(columns), float32(height)/float32(rows), 1)
+
+	model := scale.Mul4(trans)
+
+	gl.UniformMatrix4fv(modelUniform, 1, false, &model[0])
 
 	gl.BindVertexArray(c.drawable)
 	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(square)/3))
@@ -87,7 +103,7 @@ func (c *cell) draw(modelUniform int32) {
 }
 
 // checkState determines the state of the cell for the next tick of the game.
-func (c *cell) checkState(cells [][]*cell) {
+func (c *cell) checkState(cells []*cell) {
 	c.alive = c.aliveNext
 	c.aliveNext = c.alive
 
@@ -116,22 +132,22 @@ func (c *cell) checkState(cells [][]*cell) {
 }
 
 // liveNeighbors returns the number of live neighbors for a cell.
-func (c *cell) liveNeighbors(cells [][]*cell) int {
+func (c *cell) liveNeighbors(cells []*cell) int {
 	var liveCount int
 	add := func(x, y int) {
 		// If we're at an edge, check the other side of the board.
-		if x == len(cells) {
+		if x == columns {
 			x = 0
 		} else if x == -1 {
-			x = len(cells) - 1
+			x = columns - 1
 		}
-		if y == len(cells[x]) {
+		if y == rows {
 			y = 0
 		} else if y == -1 {
-			y = len(cells[x]) - 1
+			y = rows - 1
 		}
 
-		if cells[x][y].alive {
+		if cells[x+y*columns].alive {
 			liveCount++
 		}
 	}
@@ -167,8 +183,9 @@ func main() {
 	projectionUniform := gl.GetUniformLocation(program, gl.Str("projection\x00"))
 	cameraUniform := gl.GetUniformLocation(program, gl.Str("camera\x00"))
 	modelUniform := gl.GetUniformLocation(program, gl.Str("model\x00"))
+	colorshiftUniform := gl.GetUniformLocation(program, gl.Str("colorshift\x00"))
 
-	projection := mgl32.Ortho(0, width, 0, height, 0.1, 5)
+	projection := mgl32.Ortho(0, width, 0, height, 0.1, 500)
 	gl.UniformMatrix4fv(projectionUniform, 1, false, &projection[0])
 
 	camera := mgl32.LookAtV(mgl32.Vec3{0, 0, 3}, mgl32.Vec3{0, 0, 0}, mgl32.Vec3{0, 1, 0})
@@ -177,48 +194,48 @@ func main() {
 	model := mgl32.Ident4()
 	gl.UniformMatrix4fv(modelUniform, 1, false, &model[0])
 
-	//prevTime := glfw.GetTime()
+	gl.Uniform3f(colorshiftUniform, 1, 1, 1)
+
+	fpsLimiter := graphical.NewFpsLimiter(fps)
 
 	for !window.ShouldClose() {
-		t := time.Now()
+		fpsLimiter.StartFrame()
 
-		for x := range cells {
-			for _, c := range cells[x] {
-				c.checkState(cells)
-			}
+		for _, cell := range cells {
+			cell.checkState(cells)
 		}
+
+		gl.Uniform3f(colorshiftUniform, float32(math.Sin(glfw.GetTime())), float32(math.Cos(glfw.GetTime())), float32(math.Sin(glfw.GetTime()))*float32(math.Cos(glfw.GetTime())))
 
 		if err := draw(cells, window, program, projectionUniform, cameraUniform, modelUniform); err != nil {
 			exitWith(err, "window draw failure")
 		}
 
-		time.Sleep(time.Second/time.Duration(fps) - time.Since(t))
+		fpsLimiter.WaitForNextFrame()
+		fmt.Println("fps", fpsLimiter.CurrentFrameFps())
 	}
 }
 
-func makeCells() [][]*cell {
+func makeCells() []*cell {
 	rand.Seed(100)
 
 	drawable := makeVao(square)
 
-	cells := make([][]*cell, rows, rows)
-	for x := 0; x < rows; x++ {
-		for y := 0; y < columns; y++ {
+	cells := make([]*cell, rows*columns, rows*columns)
+	for x := 0; x < columns; x++ {
+		for y := 0; y < rows; y++ {
 			c := newCell(x, y, drawable)
 
 			c.alive = rand.Float64() < threshold
 			c.aliveNext = c.alive
 
-			cells[x] = append(cells[x], c)
+			cells[x+y*columns] = c
 		}
 	}
 	return cells
 }
 
 func newCell(x, y int, drawable uint32) *cell {
-	points := make([]float32, len(square), len(square))
-	copy(points, square)
-
 	return &cell{
 		drawable: drawable,
 
@@ -303,14 +320,12 @@ func makeVao(points []float32) uint32 {
 
 }
 
-func draw(cells [][]*cell, window *glfw.Window, program uint32, projectionUniform int32, cameraUniform int32, modelUniform int32) error {
+func draw(cells []*cell, window *glfw.Window, program uint32, projectionUniform int32, cameraUniform int32, modelUniform int32) error {
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	gl.UseProgram(program)
 
-	for x := range cells {
-		for _, c := range cells[x] {
-			c.draw(modelUniform)
-		}
+	for _, cell := range cells {
+		cell.draw(modelUniform)
 	}
 
 	glfw.PollEvents()
