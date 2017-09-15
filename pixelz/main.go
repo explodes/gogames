@@ -24,42 +24,8 @@ const (
 	slowmoFactor = 10
 )
 
-type Updater interface {
-	Update(dt float64)
-}
-
-type Drawer interface {
-	Draw(imd *imdraw.IMDraw)
-}
-
-type physics struct {
-	pos pixel.Vec
-	vel pixel.Vec
-	acc pixel.Vec
-}
-
-func newPhysics(x, y, dx, dy, ddx, ddy float64) *physics {
-	return &physics{
-		pos: pixel.V(x, y),
-		vel: pixel.V(dx, dy),
-		acc: pixel.V(ddx, ddy),
-	}
-}
-
-var _ Updater = &physics{}
-
-func (p *physics) Update(dt float64) {
-	p.pos = p.pos.Add(p.vel.Scaled(dt))
-	p.vel = p.vel.Add(p.acc.Scaled(dt))
-	p.acc = pixel.ZV
-}
-
-func (p *physics) Force(x, y float64) {
-	p.acc = p.acc.Add(pixel.V(x, y))
-}
-
 type particle struct {
-	*physics
+	*games.Physics
 
 	color pixel.RGBA
 
@@ -71,12 +37,12 @@ type particle struct {
 	twinkled      bool
 }
 
-var _ Updater = &particle{}
-var _ Drawer = &particle{}
+var _ games.Updater = &particle{}
+var _ games.Drawer = &particle{}
 
 func (d *particle) Update(dt float64) {
 	d.Force(0, -250) // gravity
-	d.physics.Update(dt)
+	d.Physics.Update(dt)
 
 	d.color.A *= dt * 0.5
 	d.size *= 1 - (dt * d.shrinkage)
@@ -110,7 +76,7 @@ func (d *particle) Draw(imd *imdraw.IMDraw) {
 
 	size := d.size * 0.5
 	imd.Color = d.color
-	imd.Push(d.pos)
+	imd.Push(d.Position)
 	imd.Circle(size, 0)
 }
 
@@ -150,7 +116,7 @@ func makeParticles() []*particle {
 		dir := pixel.V(math.Cos(angle)*force, math.Sin(angle)*force)
 
 		particle := &particle{
-			physics:       newPhysics(0, 0, dir.X, dir.Y, 0, 0),
+			Physics:       games.NewPhysicsWithVelocity(0, 0, dir.X, dir.Y),
 			color:         randomFireColor(),
 			size:          2 + 5*rand.Float64(),
 			shrinkage:     0.7 + 0.1*rand.Float64(),
@@ -190,7 +156,6 @@ func run() {
 	imd.Precision = 32
 
 	fpsLimit := games.NewFpsLimiter(maxFps)
-	//var fps float32 = 0
 
 	canvas.Clear(colornames.Black)
 
