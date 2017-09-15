@@ -1,10 +1,10 @@
-package main
+package life
 
 import (
 	"runtime"
 
 	"fmt"
-	"github.com/explodes/practice/gllife/graphical"
+	"github.com/explodes/practice/games"
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
 	"github.com/go-gl/mathgl/mgl32"
@@ -29,6 +29,7 @@ const (
 uniform mat4 projection;
 uniform mat4 camera;
 uniform mat4 model;
+uniform float timing;
 
 out vec4 vertexColor;
 in vec3 vert;
@@ -62,7 +63,7 @@ void main() {
 var (
 	triangle = []float32{
 		mid, high, mid, // top
-		low, low, mid, // left
+		low, low, mid,  // left
 		high, low, mid, // right
 	}
 	square = []float32{
@@ -184,6 +185,7 @@ func main() {
 	cameraUniform := gl.GetUniformLocation(program, gl.Str("camera\x00"))
 	modelUniform := gl.GetUniformLocation(program, gl.Str("model\x00"))
 	colorshiftUniform := gl.GetUniformLocation(program, gl.Str("colorshift\x00"))
+	timingUniform := gl.GetUniformLocation(program, gl.Str("timing\x00"))
 
 	projection := mgl32.Ortho(0, width, 0, height, 0.1, 500)
 	gl.UniformMatrix4fv(projectionUniform, 1, false, &projection[0])
@@ -196,7 +198,7 @@ func main() {
 
 	gl.Uniform3f(colorshiftUniform, 1, 1, 1)
 
-	fpsLimiter := graphical.NewFpsLimiter(fps)
+	fpsLimiter := games.NewFpsLimiter(fps)
 
 	for !window.ShouldClose() {
 		fpsLimiter.StartFrame()
@@ -205,6 +207,7 @@ func main() {
 			cell.checkState(cells)
 		}
 
+		gl.Uniform1f(timingUniform, float32(glfw.GetTime()))
 		gl.Uniform3f(colorshiftUniform, float32(math.Sin(glfw.GetTime())), float32(math.Cos(glfw.GetTime())), float32(math.Sin(glfw.GetTime()))*float32(math.Cos(glfw.GetTime())))
 
 		if err := draw(cells, window, program, projectionUniform, cameraUniform, modelUniform); err != nil {

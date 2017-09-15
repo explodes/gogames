@@ -1,10 +1,12 @@
-package graphical
+package games
 
-import "time"
+import (
+	"time"
+)
 
 type FpsLimiter struct {
-	wait      time.Duration
-	startTime time.Time
+	wait       time.Duration
+	frameStart time.Time
 }
 
 func NewFpsLimiter(maxFps int) *FpsLimiter {
@@ -14,18 +16,17 @@ func NewFpsLimiter(maxFps int) *FpsLimiter {
 }
 
 func (f *FpsLimiter) StartFrame() {
-	f.startTime = time.Now()
+	f.frameStart = time.Now()
 }
 
 func (f *FpsLimiter) WaitForNextFrame() {
-	time.Sleep(f.wait - time.Since(f.startTime))
+	time.Sleep(f.wait - time.Since(f.frameStart))
 }
 
 func (f *FpsLimiter) SetLimit(maxFps int) {
 	f.wait = time.Second / time.Duration(maxFps)
 }
 
-func (f *FpsLimiter) CurrentFrameFps() float32 {
-	duration := time.Since(f.startTime)
-	return float32(time.Second) / float32(duration)
+func (f *FpsLimiter) CurrentFrameFps() float64 {
+	return 1 / time.Since(f.frameStart).Seconds()
 }
