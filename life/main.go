@@ -1,10 +1,10 @@
-package life
+package main
 
 import (
 	"runtime"
 
 	"fmt"
-	"github.com/explodes/practice/games"
+	"github.com/explodes/gogames"
 	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/go-gl/glfw/v3.2/glfw"
 	"github.com/go-gl/mathgl/mgl32"
@@ -63,7 +63,7 @@ void main() {
 var (
 	triangle = []float32{
 		mid, high, mid, // top
-		low, low, mid,  // left
+		low, low, mid, // left
 		high, low, mid, // right
 	}
 	square = []float32{

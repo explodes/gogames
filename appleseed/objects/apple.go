@@ -1,7 +1,7 @@
 package objects
 
 import (
-	"github.com/explodes/practice/games"
+	"github.com/explodes/gogames"
 	"github.com/faiface/pixel/imdraw"
 	"golang.org/x/image/colornames"
 )

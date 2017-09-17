@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/explodes/practice/games"
-	"github.com/explodes/practice/games/appleseed/objects"
+	"github.com/explodes/gogames"
+	"github.com/explodes/gogames/appleseed/objects"
 	"github.com/faiface/pixel"
 	"github.com/faiface/pixel/imdraw"
 	"github.com/faiface/pixel/pixelgl"
