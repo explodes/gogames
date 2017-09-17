@@ -215,7 +215,7 @@ func main() {
 		}
 
 		fpsLimiter.WaitForNextFrame()
-		fmt.Println("fps", fpsLimiter.CurrentFrameFps())
+		window.SetTitle(fmt.Sprintf("%s | fps: %.02f", title, fpsLimiter.CurrentFrameFps()))
 	}
 }
 
