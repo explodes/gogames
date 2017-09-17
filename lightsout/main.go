@@ -43,6 +43,7 @@ type Star struct {
 	rotationDeg     float64
 	color           pixel.RGBA
 	colorTransition float64
+	drawing         *imdraw.IMDraw
 }
 
 func (s *Star) Update(dt float64) {
@@ -55,22 +56,34 @@ func degToRad(d float64) float64 {
 	return d * math.Pi / 180
 }
 
-func (s *Star) Draw(imd *imdraw.IMDraw, canvas *pixelgl.Canvas) {
+func NewStar(width, height float64) *Star {
+	star := &Star{
+		rotationDeg:     0,
+		color:           pixel.RGB(1, 1, 0),
+		colorTransition: 0,
+	}
+	star.drawing = star.createDrawing(width, height)
+	return star
+
+}
+
+func (s *Star) createDrawing(width, height float64) *imdraw.IMDraw {
 	const pointDegDelta = 360.0 / (starPoints)
 	const pointInnerDegDelta = 360.0 / (2.0 * starPoints)
 	//fmt.Println(pointDegDelta)
 
-	maxMagnitude := math.Min(canvasWidth, canvasHeight) / 2
+	maxMagnitude := math.Min(width, height) / 2
 	innerMagnitude := maxMagnitude * starInnerRadiusFactor
 
+	imd := imdraw.New(nil)
 	imd.Color = s.color
 
 	for point := 0; point < starPoints; point++ {
-		degrees := float64(point)*pointDegDelta + 90 - s.rotationDeg
+		degrees := float64(point)*pointDegDelta + 90
 
-		x0, y0 := math.Cos(degToRad(degrees+pointInnerDegDelta))*innerMagnitude+canvasWidth/2, math.Sin(degToRad(degrees+pointInnerDegDelta))*innerMagnitude+canvasHeight/2
-		x1, y1 := math.Cos(degToRad(degrees))*maxMagnitude+canvasWidth/2, math.Sin(degToRad(degrees))*maxMagnitude+canvasHeight/2
-		x2, y2 := math.Cos(degToRad(degrees-pointInnerDegDelta))*innerMagnitude+canvasWidth/2, math.Sin(degToRad(degrees-pointInnerDegDelta))*innerMagnitude+canvasHeight/2
+		x0, y0 := math.Cos(degToRad(degrees+pointInnerDegDelta))*innerMagnitude+width/2, math.Sin(degToRad(degrees+pointInnerDegDelta))*innerMagnitude+height/2
+		x1, y1 := math.Cos(degToRad(degrees))*maxMagnitude+width/2, math.Sin(degToRad(degrees))*maxMagnitude+height/2
+		x2, y2 := math.Cos(degToRad(degrees-pointInnerDegDelta))*innerMagnitude+width/2, math.Sin(degToRad(degrees-pointInnerDegDelta))*innerMagnitude+height/2
 
 		imd.Push(pixel.V(x0, y0))
 		imd.Push(pixel.V(x1, y1))
@@ -78,10 +91,18 @@ func (s *Star) Draw(imd *imdraw.IMDraw, canvas *pixelgl.Canvas) {
 		imd.Polygon(0)
 
 		imd.Push(pixel.V(x0, y0))
-		imd.Push(pixel.V(canvasWidth/2, canvasHeight/2))
+		imd.Push(pixel.V(width/2, height/2))
 		imd.Push(pixel.V(x2, y2))
 		imd.Polygon(0)
 	}
+
+	return imd
+}
+
+func (s *Star) Draw(canvas *pixelgl.Canvas) {
+	canvas.SetColorMask(s.color)
+	canvas.SetMatrix(pixel.IM.Rotated(canvas.Bounds().Center(), degToRad(s.rotationDeg)))
+	s.drawing.Draw(canvas)
 }
 
 func newGrid() *Grid {
@@ -98,6 +119,7 @@ func newGrid() *Grid {
 func squareColor(index int) pixel.RGBA {
 
 	var mod int
+	// todo(evan): these colors could still make vertical columns of the same color (i.e. 6x6 board)
 	if gridSideLength%2 == 0 {
 		mod = 3
 	} else {
@@ -129,10 +151,7 @@ func run() {
 	fpsLimit := games.NewFpsLimiter(maxFps)
 
 	grid := newGrid()
-	star := &Star{
-		rotationDeg: 0,
-		color:       pixel.RGB(1, 1, 0),
-	}
+	star := NewStar(canvasWidth, canvasHeight)
 
 	//last := time.Now()
 
@@ -203,11 +222,14 @@ func run() {
 		star.Update(dt)
 
 		//draw:
+		canvas.Clear(colornames.Black)
 		imd.Clear()
 
 		if winner {
-			star.Draw(imd, canvas)
+			star.Draw(canvas)
 		} else {
+			canvas.SetColorMask(colornames.White)
+			canvas.SetMatrix(pixel.IM)
 			// draw game into image
 			for i := 0; i < gridSquares; i++ {
 				if !grid.squares[i] {
@@ -226,7 +248,6 @@ func run() {
 		}
 
 		// draw image into canvas
-		canvas.Clear(colornames.Black)
 		imd.Draw(canvas)
 
 		// draw canvas into window
